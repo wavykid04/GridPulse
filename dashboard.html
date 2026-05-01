@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GridGuard — Theft Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg-base:    #0f1117;
+    --bg-card:    #181c27;
+    --bg-card2:   #1e2335;
+    --bg-input:   #252a3a;
+    --accent:     #b6f542;
+    --accent2:    #5b7fff;
+    --accent3:    #ff6b6b;
+    --text-pri:   #e8ecf4;
+    --text-sec:   #8892a4;
+    --text-mute:  #4e5669;
+    --border:     rgba(255,255,255,0.06);
+    --border2:    rgba(255,255,255,0.10);
+    --radius:     16px;
+    --radius-sm:  10px;
+    --font:       'DM Sans', sans-serif;
+    --mono:       'DM Mono', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg-base);
+    font-family: var(--font);
+    color: var(--text-pri);
+    min-height: 100vh;
+    display: flex;
+    overflow-x: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 64px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0;
+    gap: 8px;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 100;
+  }
+  .sidebar-logo {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 20px;
+  }
+  .sidebar-logo svg { width: 20px; height: 20px; }
+  .nav-icon {
+    width: 40px; height: 40px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--text-mute);
+    transition: background 0.2s, color 0.2s;
+    border: none; background: none;
+  }
+  .nav-icon:hover { background: var(--bg-card2); color: var(--text-sec); }
+  .nav-icon.active { background: var(--bg-card2); color: var(--accent); }
+  .sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: var(--bg-base);
+  }
+
+  /* ── Main ── */
+  .main {
+    margin-left: 64px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 28px 28px 28px;
+    gap: 20px;
+    max-width: calc(100vw - 64px);
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topbar-title h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+  .topbar-title p { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+  .topbar-right { display: flex; gap: 10px; align-items: center; }
+  .badge-pill {
+    background: var(--accent2);
+    color: #fff;
+    font-size: 12px; font-weight: 500;
+    padding: 5px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.2px;
+  }
+  .badge-status {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg-card2);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px; color: var(--text-sec);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-green { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .dot-orange { background: #ffb84d; box-shadow: 0 0 6px #ffb84d; }
+  .dot-red { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); }
+
+  /* ── Upload zone ── */
+  .upload-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+  }
+  .upload-zone {
+    border: 2px dashed var(--border2);
+    border-radius: var(--radius-sm);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(182,245,66,0.04);
+  }
+  .upload-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .upload-icon {
+    width: 48px; height: 48px;
+    background: rgba(182,245,66,0.1);
+    border-radius: 12px;
+    margin: 0 auto 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .upload-zone h3 { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .upload-zone p { font-size: 12px; color: var(--text-sec); }
+
+  .upload-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .form-group label {
+    display: block; font-size: 11px; color: var(--text-sec);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    margin-bottom: 6px;
+  }
+  .form-group input[type=number], .form-group input[type=range] {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    color: var(--text-pri);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus { border-color: var(--accent2); }
+  .btn-run {
+    width: 100%;
+    background: var(--accent);
+    color: var(--bg-base);
+    font-family: var(--font);
+    font-size: 14px; font-weight: 600;
+    padding: 11px;
+    border-radius: var(--radius-sm);
+    border: none; cursor: pointer;
+    margin-top: 16px;
+    transition: opacity 0.2s, transform 0.1s;
+    letter-spacing: 0.2px;
+  }
+  .btn-run:hover { opacity: 0.9; }
+  .btn-run:active { transform: scale(0.99); }
+  .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Progress bar ── */
+  .progress-wrap {
+    display: none;
+    margin-top: 16px;
+  }
+  .progress-wrap.show { display: block; }
+  .progress-bar-bg {
+    height: 4px;
+    background: var(--bg-input);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+  .progress-label {
+    font-size: 12px; color: var(--text-sec);
+    margin-top: 6px;
+    display: flex; justify-content: space-between;
+  }
+
+  /* ── Grid ── */
+  .grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 1100px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  /* ── Stat cards ── */
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 10px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .stat-card.accent-green::before { background: var(--accent); }
+  .stat-card.accent-blue::before  { background: var(--accent2); }
+  .stat-card.accent-red::before   { background: var(--accent3); }
+  .stat-card.accent-orange::before{ background: #ffb84d; }
+  .stat-card.loaded::before { opacity: 1; }
+
+  .stat-label {
+    font-size: 11px; font-weight: 500;
+    color: var(--text-mute);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stat-value {
+    font-size: 34px; font-weight: 600;
+    letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .stat-sub {
+    font-size: 12px; color: var(--text-sec);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stat-chip {
+    font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 500;
+  }
+  .chip-green { background: rgba(182,245,66,0.12); color: var(--accent); }
+  .chip-red   { background: rgba(255,107,107,0.12); color: var(--accent3); }
+  .chip-blue  { background: rgba(91,127,255,0.12);  color: var(--accent2); }
+
+  /* ── Chart card ── */
+  .chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+  }
+  .card-title { font-size: 14px; font-weight: 500; }
+  .card-pill {
+    font-size: 11px; color: var(--text-sec);
+    background: var(--bg-input);
+    padding: 4px 10px; border-radius: 6px;
+  }
+
+  /* ── Alerts table ── */
+  .alerts-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    overflow: hidden;
+  }
+  .alerts-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  .alerts-table th {
+    text-align: left;
+    font-size: 10px; font-weight: 500;
+    color: var(--text-mute);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    padding: 0 10px 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .alerts-table td {
+    padding: 10px 10px 10px 0;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    vertical-align: middle;
+  }
+  .alerts-table tr:last-child td { border-bottom: none; }
+  .alerts-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .risk-bar {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .risk-bar-bg {
+    flex: 1; height: 5px;
+    background: var(--bg-input); border-radius: 3px;
+    max-width: 80px;
+  }
+  .risk-bar-fill { height: 100%; border-radius: 3px; }
+  .reason-text {
+    font-size: 11px; color: var(--text-sec);
+    max-width: 280px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .meter-badge {
+    background: var(--bg-input);
+    font-family: var(--mono);
+    font-size: 11px; padding: 3px 8px; border-radius: 6px;
+    color: var(--accent2);
+  }
+
+  /* ── Meter risk table ── */
+  .meter-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .meter-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .meter-row:last-child { border-bottom: none; }
+  .meter-id {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--text-sec); min-width: 55px;
+  }
+  .meter-bar-bg {
+    flex: 1; height: 6px; background: var(--bg-input);
+    border-radius: 4px; overflow: hidden;
+  }
+  .meter-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.8s ease;
+  }
+  .meter-score {
+    font-family: var(--mono); font-size: 12px;
+    min-width: 36px; text-align: right;
+    font-weight: 500;
+  }
+
+  /* ── Rule breakdown ── */
+  .rules-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .rule-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .rule-row:last-child { margin-bottom: 0; }
+  .rule-name {
+    font-size: 11px; color: var(--text-sec);
+    min-width: 140px; font-family: var(--mono);
+  }
+  .rule-bar-bg {
+    flex: 1; height: 5px; background: var(--bg-input);
+    border-radius: 3px; overflow: hidden;
+  }
+  .rule-bar-fill {
+    height: 100%; border-radius: 3px; background: var(--accent2);
+    transition: width 1s ease;
+  }
+  .rule-pct { font-size: 11px; font-family: var(--mono); color: var(--text-sec); min-width: 36px; text-align: right; }
+
+  /* ── Empty state ── */
+  .empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 60px 20px; text-align: center;
+    color: var(--text-mute);
+    gap: 10px;
+  }
+  .empty-icon { font-size: 36px; opacity: 0.4; }
+  .empty p { font-size: 13px; }
+
+  /* ── Results section ── */
+  #results-section { display: none; }
+  #results-section.show { display: contents; }
+
+  /* ── Score sparkline ── */
+  .sparkline-wrap { display: flex; align-items: flex-end; gap: 2px; height: 40px; }
+  .spark-bar {
+    flex: 1; min-width: 3px; border-radius: 2px 2px 0 0;
+    background: var(--accent2); opacity: 0.5; transition: opacity 0.2s;
+  }
+  .spark-bar:hover { opacity: 1; }
+
+  /* animations */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fadeUp 0.4s ease forwards; }
+  .delay-1 { animation-delay: 0.05s; opacity: 0; }
+  .delay-2 { animation-delay: 0.1s;  opacity: 0; }
+  .delay-3 { animation-delay: 0.15s; opacity: 0; }
+  .delay-4 { animation-delay: 0.2s;  opacity: 0; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ──────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <svg viewBox="0 0 20 20" fill="none">
+      <path d="M10 2L3 6v8l7 4 7-4V6L10 2z" stroke="#0f1117" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M10 6v8M6.5 8l3.5 2 3.5-2" stroke="#0f1117" stroke-width="1.2"/>
+    </svg>
+  </div>
+  <button class="nav-icon active" title="Dashboard">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+      <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+    </svg>
+  </button>
+  <button class="nav-icon" title="Upload">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+    </svg>
+  </button>
+  <button class="nav-icon" title="Analytics">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+  </button>
+  <button class="nav-icon" title="Settings">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+    </svg>
+  </button>
+  <div class="sidebar-bottom">
+    <button class="nav-icon" title="Logout">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+      </svg>
+    </button>
+    <div class="avatar">GG</div>
+  </div>
+</aside>
+
+<!-- ── Main content ──────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Top bar -->
+  <div class="topbar fade-up">
+    <div class="topbar-title">
+      <h1>GridGuard</h1>
+      <p>Smart Meter Electricity Theft Detection</p>
+    </div>
+    <div class="topbar-right">
+      <div class="badge-status" id="api-status">
+        <div class="dot dot-orange" id="api-dot"></div>
+        <span id="api-status-text">Connecting…</span>
+      </div>
+      <div class="badge-pill">Live</div>
+    </div>
+  </div>
+
+  <!-- Upload card -->
+  <div class="upload-card fade-up delay-1">
+    <div class="upload-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".txt,.csv" />
+      <div class="upload-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#b6f542" stroke-width="1.8">
+          <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+          <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/>
+        </svg>
+      </div>
+      <h3>Drop your UCI dataset here</h3>
+      <p>household_power_consumption.txt or .csv — up to 500 MB</p>
+    </div>
+
+    <div class="upload-controls">
+      <div class="form-group">
+        <label>Virtual Meters</label>
+        <input type="number" id="ctrl-meters" value="20" min="2" max="200" />
+      </div>
+      <div class="form-group">
+        <label>Contamination %</label>
+        <input type="number" id="ctrl-contam" value="5" min="1" max="30" step="0.5" />
+      </div>
+      <div class="form-group">
+        <label>Alert Threshold</label>
+        <input type="number" id="ctrl-thresh" value="0.7" min="0.1" max="0.99" step="0.05" />
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end;">
+        <div style="flex:1;">
+          <label>API Base URL</label>
+          <input type="text" id="ctrl-api" value="http://localhost:8000"
+            style="background:var(--bg-input);border:1px solid var(--border2);border-radius:var(--radius-sm);
+                   color:var(--text-pri);font-family:var(--mono);font-size:12px;padding:8px 12px;
+                   outline:none;width:100%;"/>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-run" id="btn-run" disabled>
+      Select a file to analyse
+    </button>
+
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progress-msg">Starting…</span>
+        <span id="progress-pct">0%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results section -->
+  <div id="results-section">
+
+    <!-- Stat cards -->
+    <div class="grid-4 fade-up delay-2">
+      <div class="stat-card accent-green" id="card-total">
+        <div class="stat-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+          Total Records
+        </div>
+        <div class="stat-value" id="val-total">—</div>
+        <div class="stat-sub">Hourly meter readings</div>
+      </div>
+      <div class="stat-card accent-red" id="card-flagged">
+        <div class="stat-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          Flagged
+        </div>
+        <div class="stat-value" id="val-flagged">—</div>
+        <div class="stat-sub"><span class="stat-chip chip-red" id="chip-flagged-pct">—%</span> flag rate</div>
+      </div>
+      <div class="stat-card accent-blue" id="card-meters">
+        <div class="stat-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          High-Risk Meters
+        </div>
+        <div class="stat-value" id="val-meters">—</div>
+        <div class="stat-sub">Require investigation</div>
+      </div>
+      <div class="stat-card accent-orange" id="card-score">
+        <div class="stat-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Max Risk Score
+        </div>
+        <div class="stat-value" id="val-score">—</div>
+        <div class="stat-sub">
+          <span class="stat-chip chip-blue">Avg <span id="val-avg">—</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk timeline + Rule breakdown -->
+    <div class="grid-2 fade-up delay-3">
+      <div class="chart-card">
+        <div class="card-header">
+          <span class="card-title">Risk Score Timeline</span>
+          <span class="card-pill">6-hour intervals</span>
+        </div>
+        <div style="position:relative;height:180px;">
+          <canvas id="timeline-chart" role="img" aria-label="Risk score over time"></canvas>
+        </div>
+      </div>
+      <div class="rules-card">
+        <div class="card-header">
+          <span class="card-title">Rule Contributions</span>
+          <span class="card-pill">Avg across flagged</span>
+        </div>
+        <div id="rules-bars"></div>
+      </div>
+    </div>
+
+    <!-- Score dist + Meter table + Alerts -->
+    <div class="grid-3 fade-up delay-4">
+      <div class="chart-card">
+        <div class="card-header">
+          <span class="card-title">Score Distribution</span>
+          <span class="card-pill">All records</span>
+        </div>
+        <div style="position:relative;height:160px;">
+          <canvas id="dist-chart" role="img" aria-label="Distribution of final risk scores"></canvas>
+        </div>
+      </div>
+
+      <div class="meter-card">
+        <div class="card-header">
+          <span class="card-title">Meter Risk Index</span>
+          <span class="card-pill" id="meter-pill">Top meters</span>
+        </div>
+        <div id="meter-rows"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="card-header">
+          <span class="card-title">IF vs Rule Score</span>
+          <span class="card-pill">Scatter</span>
+        </div>
+        <div style="position:relative;height:160px;">
+          <canvas id="scatter-chart" role="img" aria-label="Isolation Forest score vs Rule score scatter"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts table -->
+    <div class="alerts-card fade-up delay-4">
+      <div class="card-header">
+        <span class="card-title">High-Risk Alerts</span>
+        <span class="card-pill" id="alerts-count-pill">—</span>
+      </div>
+      <div id="alerts-body">
+        <div class="empty">
+          <div class="empty-icon">🔍</div>
+          <p>No alerts yet</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /results-section -->
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const API = () => document.getElementById('ctrl-api').value.replace(/\/$/, '');
+let pollTimer = null;
+let timelineChart = null, distChart = null, scatterChart = null;
+
+// ── API health check ─────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(API() + '/api/health');
+    if (r.ok) {
+      document.getElementById('api-dot').className = 'dot dot-green';
+      document.getElementById('api-status-text').textContent = 'API Connected';
+    } else { throw new Error(); }
+  } catch {
+    document.getElementById('api-dot').className = 'dot dot-red';
+    document.getElementById('api-status-text').textContent = 'API Offline';
+  }
+}
+checkHealth();
+
+// ── File input ───────────────────────────────────────────
+const fileInput = document.getElementById('file-input');
+const dropZone  = document.getElementById('drop-zone');
+const btnRun    = document.getElementById('btn-run');
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) {
+    btnRun.disabled = false;
+    btnRun.textContent = `Analyse "${fileInput.files[0].name}"`;
+  }
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) {
+    const dt = new DataTransfer();
+    dt.items.add(e.dataTransfer.files[0]);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change'));
+  }
+});
+
+// ── Run ──────────────────────────────────────────────────
+btnRun.addEventListener('click', async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  btnRun.disabled = true;
+  btnRun.textContent = 'Uploading…';
+  showProgress(true, 'Uploading dataset…', 2);
+  hideResults();
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('n_meters', document.getElementById('ctrl-meters').value);
+  fd.append('contamination', document.getElementById('ctrl-contam').value / 100);
+  fd.append('threshold', document.getElementById('ctrl-thresh').value);
+
+  try {
+    const r = await fetch(API() + '/api/upload', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    const { job_id } = await r.json();
+    pollJob(job_id);
+  } catch (e) {
+    alert('Upload failed: ' + e.message);
+    btnRun.disabled = false;
+    btnRun.textContent = 'Try again';
+    showProgress(false);
+  }
+});
+
+// ── Poll ─────────────────────────────────────────────────
+function pollJob(job_id) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const r  = await fetch(API() + '/api/status/' + job_id);
+      const d  = await r.json();
+      showProgress(true, d.message, d.progress);
+      if (d.status === 'done') {
+        clearInterval(pollTimer);
+        
+        // 1. Load the data from the API
+        await loadResults(job_id); 
+        
+        // 2. FORCE THE UI TO SWITCH (Crucial step missing)
+        showProgress(false);                                     // Hide the green progress bar
+        document.getElementById('results-section').classList.add('show'); // Show the charts
+        
+        // 3. Reset the button
+        btnRun.disabled = false;
+        btnRun.textContent = 'Run Again';
+      } else if (d.status === 'error') {
+        clearInterval(pollTimer);
+        showProgress(false);
+        alert('Pipeline error: ' + d.error);
+        btnRun.disabled = false;
+        btnRun.textContent = 'Try again';
+      }
+    } catch { /* retry next tick */ }
+  }, 1000);
+}
+
+// ── Load & render results ─────────────────────────────────
+async function loadResults(jobId) {
+  try {
+    // FIX 1: Use the API() function instead of the non-existent API_BASE_URL
+    const res = await fetch(`${API()}/api/summary/${jobId}`);
+    const summary = await res.json();
+    
+    // 1. Update simple stats
+    renderStats(summary); // Use your existing helper function
+
+    // 2. Safety check for charts: Only render if data exists
+    if (summary.risk_over_time) renderTimeline(summary.risk_over_time);
+    if (summary.score_distribution) renderDist(summary.score_distribution);
+    if (summary.meter_risk_table) renderMeters(summary.meter_risk_table); // Use renderMeters
+    if (summary.rule_contributions) renderRules(summary.rule_contributions);
+
+    // 3. Load the alerts table
+    await loadAlerts(jobId);
+    
+    // 4. Force the UI to show everything
+    showProgress(false);
+    document.getElementById('results-section').classList.add('show');
+    
+  } catch (err) {
+    console.error("Dashboard Load Error:", err);
+  }
+}
+
+// FIX 2: You also need the loadAlerts function which was missing
+async function loadAlerts(jobId) {
+  try {
+    const r = await fetch(`${API()}/api/alerts/${jobId}`);
+    const alerts = await r.json();
+    renderAlerts(alerts, alerts.length);
+    renderScatter(alerts);
+  } catch (e) {
+    console.error("Alerts Load Error:", e);
+  }
+}
+
+// ── Stat cards ────────────────────────────────────────────
+function renderStats(s) {
+  document.getElementById('val-total').textContent    = s.total_records.toLocaleString();
+  document.getElementById('val-flagged').textContent  = s.total_flagged.toLocaleString();
+  document.getElementById('chip-flagged-pct').textContent = s.flag_rate_pct.toFixed(1) + '%';
+  document.getElementById('val-meters').textContent   = s.n_high_risk_meters;
+  document.getElementById('val-score').textContent    = s.max_final_score.toFixed(3);
+  document.getElementById('val-avg').textContent      = s.avg_final_score.toFixed(3);
+}
+
+// ── Timeline chart ────────────────────────────────────────
+function renderTimeline(data) {
+  if (timelineChart) timelineChart.destroy();
+  const labels = data.map(d => {
+    const dt = new Date(d.t);
+    return dt.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  });
+  const scores = data.map(d => d.score);
+  timelineChart = new Chart(document.getElementById('timeline-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: scores,
+        borderColor: '#5b7fff',
+        backgroundColor: 'rgba(91,127,255,0.12)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        fill: true,
+        tension: 0.4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ' Risk: ' + ctx.parsed.y.toFixed(3) }
+      }},
+      scales: {
+        x: { ticks: { color: '#4e5669', font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#4e5669', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 1 }
+      }
+    }
+  });
+}
+
+// ── Rule bars ─────────────────────────────────────────────
+function renderRules(contrib) {
+  const labels = {
+    R1_sudden_drop:     'Sudden Drop',
+    R2_irregular_tou:   'Irregular TOU',
+    R3_flat_readings:   'Flat Readings',
+    R4_negative_reset:  'Neg/Reset',
+    R5_vi_mismatch:     'V×I Mismatch',
+    R6_peer_comparison: 'Peer Compare',
+    R7_pattern_change:  'Pattern Change',
+  };
+  const colors = ['#5b7fff','#b6f542','#ff6b6b','#ffb84d','#a78bfa','#34d399','#f472b6'];
+  const maxVal = Math.max(...Object.values(contrib), 0.001);
+  const html = Object.entries(contrib).map(([k, v], i) => `
+    <div class="rule-row">
+      <span class="rule-name">${labels[k] || k}</span>
+      <div class="rule-bar-bg">
+        <div class="rule-bar-fill" style="width:${(v/maxVal*100).toFixed(1)}%;background:${colors[i%colors.length]};"></div>
+      </div>
+      <span class="rule-pct">${(v*100).toFixed(1)}%</span>
+    </div>
+  `).join('');
+  document.getElementById('rules-bars').innerHTML = html;
+}
+
+// ── Score distribution ────────────────────────────────────
+function renderDist(data) {
+  if (distChart) distChart.destroy();
+  distChart = new Chart(document.getElementById('dist-chart'), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.bucket),
+      datasets: [{
+        data: data.map(d => d.count),
+        backgroundColor: data.map(d => {
+          const mid = parseFloat(d.bucket.split('–')[0]);
+          if (mid >= 0.7) return '#ff6b6b';
+          if (mid >= 0.4) return '#ffb84d';
+          return '#5b7fff';
+        }),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4e5669', font: { size: 9 }, maxRotation: 45 }, grid: { display: false } },
+        y: { ticks: { color: '#4e5669', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } }
+      }
+    }
+  });
+}
+
+// ── Meter rows ────────────────────────────────────────────
+function renderMeters(rows) {
+  const top = rows.slice(0, 10);
+  document.getElementById('meter-pill').textContent = `Top ${top.length}`;
+  const html = top.map(r => {
+    const pct = (r.max_score * 100).toFixed(1);
+    const col = r.max_score >= 0.7 ? '#ff6b6b' : r.max_score >= 0.4 ? '#ffb84d' : '#5b7fff';
+    return `
+      <div class="meter-row">
+        <span class="meter-id">M-${String(r.Meter_ID).padStart(3,'0')}</span>
+        <div class="meter-bar-bg">
+          <div class="meter-bar-fill" style="width:${pct}%;background:${col};"></div>
+        </div>
+        <span class="meter-score" style="color:${col};">${r.max_score.toFixed(3)}</span>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('meter-rows').innerHTML = html || '<div class="empty"><p>No meter data</p></div>';
+}
+
+// ── Scatter chart ─────────────────────────────────────────
+function renderScatter(rows) {
+  if (scatterChart) scatterChart.destroy();
+  const pts = rows.map(r => ({
+    x: parseFloat((r.Isolation_Forest_Score || 0).toFixed(3)),
+    y: parseFloat((r.Rule_Score || 0).toFixed(3)),
+  }));
+  scatterChart = new Chart(document.getElementById('scatter-chart'), {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Flagged meters',
+        data: pts,
+        backgroundColor: 'rgba(255,107,107,0.5)',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => `IF=${ctx.parsed.x.toFixed(2)}, Rule=${ctx.parsed.y.toFixed(2)}` }
+      }},
+      scales: {
+        x: { title: { display: true, text: 'IF Score', color: '#4e5669', font: { size: 10 } },
+             ticks: { color: '#4e5669', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 1 },
+        y: { title: { display: true, text: 'Rule Score', color: '#4e5669', font: { size: 10 } },
+             ticks: { color: '#4e5669', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 1 }
+      }
+    }
+  });
+}
+
+// ── Alerts table ──────────────────────────────────────────
+function renderAlerts(rows, count) {
+  document.getElementById('alerts-count-pill').textContent = count + ' alerts';
+  if (!rows.length) {
+    document.getElementById('alerts-body').innerHTML = `
+      <div class="empty"><div class="empty-icon">✓</div><p>No high-risk records detected</p></div>`;
+    return;
+  }
+  const thead = `
+    <table class="alerts-table">
+    <thead><tr>
+      <th>Timestamp</th><th>Meter</th><th>Final Score</th>
+      <th>IF Score</th><th>Rule Score</th><th>Primary Reason</th>
+    </tr></thead><tbody>`;
+  const rows_html = rows.map(r => {
+    const score = parseFloat(r.Final_Risk_Score || 0);
+    const col   = score >= 0.85 ? '#ff6b6b' : score >= 0.7 ? '#ffb84d' : '#5b7fff';
+    const ts    = r.Timestamp ? new Date(r.Timestamp).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    }) : '—';
+    return `<tr>
+      <td style="color:var(--text-sec);font-family:var(--mono);font-size:11px;">${ts}</td>
+      <td><span class="meter-badge">M-${String(r.Meter_ID).padStart(3,'0')}</span></td>
+      <td>
+        <div class="risk-bar">
+          <div class="risk-bar-bg"><div class="risk-bar-fill" style="width:${(score*100).toFixed(0)}%;background:${col};"></div></div>
+          <span style="font-family:var(--mono);font-size:11px;color:${col};font-weight:500;">${score.toFixed(3)}</span>
+        </div>
+      </td>
+      <td style="font-family:var(--mono);font-size:11px;">${(r.Isolation_Forest_Score||0).toFixed(3)}</td>
+      <td style="font-family:var(--mono);font-size:11px;">${(r.Rule_Score||0).toFixed(3)}</td>
+      <td><span class="reason-text" title="${r.Primary_Reason||''}">${r.Primary_Reason||'—'}</span></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('alerts-body').innerHTML = thead + rows_html + '</tbody></table>';
+}
+
+// ── UI helpers ────────────────────────────────────────────
+function showProgress(show, msg = '', pct = 0) {
+  const wrap = document.getElementById('progress-wrap');
+  wrap.classList.toggle('show', show);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-msg').textContent  = msg;
+  document.getElementById('progress-pct').textContent  = pct + '%';
+}
+
+function hideResults() {
+  document.getElementById('results-section').classList.remove('show');
+  if (timelineChart) { timelineChart.destroy(); timelineChart = null; }
+  if (distChart)     { distChart.destroy();     distChart = null; }
+  if (scatterChart)  { scatterChart.destroy();   scatterChart = null; }
+}
+
+// Recheck health when API URL changes
+document.getElementById('ctrl-api').addEventListener('change', checkHealth);
+</script>
+</body>
+</html>
