@@ -4,3 +4,9 @@ __pycache__/
 temp_*.txt
 results_*.csv
 .DS_Store
+# Large data files
+*.txt
+*.csv
+# If you want to keep small text files but ignore the big ones specifically:
+household_power_consumption.txt
+theft_detection_output.csv
