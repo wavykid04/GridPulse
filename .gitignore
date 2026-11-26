@@ -9,4 +9,4 @@ results_*.csv
 *.csv
 # If you want to keep small text files but ignore the big ones specifically:
 household_power_consumption.txt
-theft_detection_output.csv
+theft_detection_output.csv.pytest_cache/

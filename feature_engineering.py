@@ -10,14 +10,16 @@ import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
+NEGATIVE_FLAG_COL = "Raw_negative_flag"
+
 
 def _minmax_series(s: pd.Series, clip_upper: float = None) -> pd.Series:
     if clip_upper is not None:
         s = s.clip(upper=clip_upper)
     mn, mx = s.min(), s.max()
-    if mx == mn:
+    if pd.isna(mn) or pd.isna(mx) or mx == mn:
         return pd.Series(0.0, index=s.index, dtype="float32")
-    return ((s - mn) / (mx - mn)).fillna(0).astype("float32")
+    return ((s - mn) / (mx - mn)).fillna(0).clip(0, 1).astype("float32")
 
 
 def _safe_rolling(series: pd.Series, window: int, func: str = "mean") -> pd.Series:
@@ -35,15 +37,16 @@ def rule_sudden_drop(df: pd.DataFrame, window_hours: int = 24) -> pd.Series:
     return _minmax_series(gap, clip_upper=gap.quantile(0.995))
 
 
-def rule_irregular_tou(df):
-    # R2: Irregular Time-of-Use Patterns (1-5 AM variance)
-    # We apply the mask inside the lambda so it aligns with the group 'x'
-    return df.groupby('Meter_ID')['Global_active_power'].transform(
+def rule_irregular_tou(df: pd.DataFrame) -> pd.Series:
+    """R2: Irregular Time-of-Use - rolling 1-5 AM variance, normalised to [0, 1]."""
+    var = df.groupby("Meter_ID")["Global_active_power"].transform(
         lambda x: x.where(x.index.hour.isin([1, 2, 3, 4, 5]))
-                   .rolling(window=7*24, min_periods=1)
+                   .rolling(window=7 * 24, min_periods=1)
                    .var()
                    .fillna(0)
     )
+    var = var.fillna(0)
+    return _minmax_series(var, clip_upper=var.quantile(0.995))
 
 
 def rule_flat_readings(df: pd.DataFrame, window: int = 24, tol: float = 1e-4) -> pd.Series:
@@ -61,12 +64,20 @@ def rule_flat_readings(df: pd.DataFrame, window: int = 24, tol: float = 1e-4) ->
 
 
 def rule_negative_reset(df: pd.DataFrame) -> pd.Series:
-    """R4: Negative / non-physical values — flags for tampered meters."""
-    propagated = (
-        df.groupby("Meter_ID")["Global_active_power"]
-          .transform(lambda x: (x < 0).astype("float32").rolling(24, min_periods=1).max())
+    """R4: Negative / non-physical values — flags for tampered meters.
+
+    Reads the raw-negative flag computed before physical clipping
+    (see data_prep._clean_chunk). Falls back to checking the power column
+    directly when the flag is absent (e.g. unclipped input).
+    """
+    if NEGATIVE_FLAG_COL in df.columns:
+        flag = (df[NEGATIVE_FLAG_COL].fillna(0) > 0).astype("float32")
+    else:
+        flag = (df["Global_active_power"] < 0).astype("float32")
+    propagated = df.assign(_neg=flag.values).groupby("Meter_ID")["_neg"].transform(
+        lambda x: x.rolling(24, min_periods=1).max()
     )
-    return propagated.fillna(0).astype("float32")
+    return propagated.fillna(0).clip(0, 1).astype("float32")
 
 
 def rule_vi_mismatch(df: pd.DataFrame, window: int = 24) -> pd.Series:
@@ -74,20 +85,19 @@ def rule_vi_mismatch(df: pd.DataFrame, window: int = 24) -> pd.Series:
     df = df.copy()
     df["vi_product"] = (df["Voltage"] * df["Global_intensity"]).astype("float32")
 
-    def _inv_corr(grp: pd.DataFrame) -> pd.Series:
+    out = np.zeros(len(df), dtype="float32")
+    meter = df["Meter_ID"].values
+    for m in pd.unique(meter):
+        pos = np.flatnonzero(meter == m)
+        grp = df.iloc[pos]
         corr = (
-            grp["vi_product"]
+            grp["vi_product"].reset_index(drop=True)
               .rolling(window, min_periods=3)
-              .corr(grp["Global_active_power"])
+              .corr(grp["Global_active_power"].reset_index(drop=True))
         )
-        return ((1 - corr) / 2).clip(0, 1)
+        out[pos] = ((1 - corr) / 2).clip(0, 1).fillna(0).to_numpy(dtype="float32")
 
-    result = df.groupby("Meter_ID")[["vi_product", "Global_active_power"]].apply(_inv_corr)
-
-    if isinstance(result.index, pd.MultiIndex):
-        result = result.droplevel(0)
-
-    return result.reindex(df.index).fillna(0).astype("float32")
+    return pd.Series(out, index=df.index, dtype="float32")
 
 
 def rule_peer_comparison(df: pd.DataFrame) -> pd.Series:
@@ -168,11 +178,13 @@ def compute_all_rules(df: pd.DataFrame) -> pd.DataFrame:
         print(f"  {label} …")
         features[col] = fn(df)
 
-    rule_cols = list(RULE_WEIGHTS.keys())
+    rule_cols = list(RULE_NAMES)
     weights   = np.array([RULE_WEIGHTS[r] for r in rule_cols], dtype="float32")
     rs = (features[rule_cols].values @ weights).astype("float32")
-    mn, mx = rs.min(), rs.max()
-    features["Rule_Score"] = ((rs - mn) / (mx - mn) if mx != mn else rs * 0).astype("float32")
+    # Rule weights sum to 1 and every rule is in [0, 1], so the weighted sum is
+    # already in [0, 1]. Use it directly instead of batch min-max scaling, which
+    # made the score meaningless across runs and collapsed it to 0 when constant.
+    features["Rule_Score"] = np.clip(np.nan_to_num(rs), 0, 1).astype("float32")
 
     print(f"\n  Feature matrix shape: {features.shape}")
     print(f"  Rule_Score — mean={features['Rule_Score'].mean():.3f}, max={features['Rule_Score'].max():.3f}")

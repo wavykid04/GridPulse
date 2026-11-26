@@ -1,7 +1,7 @@
 import os
 import uuid
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict
 
@@ -24,6 +24,54 @@ app.add_middleware(
 # In-memory store for job status (In production, use Redis/Database)
 jobs: Dict[str, dict] = {}
 
+def build_summary(final_df: pd.DataFrame, thresh: float) -> dict:
+    """Compute dashboard summary data from the scored output."""
+    final_df = final_df.copy()
+    final_df.index = pd.to_datetime(final_df.index)
+    score = final_df["Final_Risk_Score"]
+    flagged = score >= thresh
+
+    # Timeline (6-hour intervals)
+    risk_series = final_df.resample("6h")["Final_Risk_Score"].mean().fillna(0)
+    risk_over_time = [{"t": str(t), "score": float(s)} for t, s in risk_series.items()]
+
+    # Score distribution (renderDist in dashboard.html)
+    bins = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    dist_counts = (
+        pd.cut(score, bins=bins, include_lowest=True).value_counts().sort_index()
+    )
+    score_distribution = [
+        {"bucket": f"{b.left:.1f}-{b.right:.1f}", "count": int(c)}
+        for b, c in zip(dist_counts.index, dist_counts.values)
+    ]
+
+    # Meter risk index (renderMeterTable in dashboard.html)
+    meter_table = (
+        final_df.groupby("Meter_ID")["Final_Risk_Score"].max()
+        .sort_values(ascending=False).head(10)
+    )
+    meter_risk_table = [
+        {"Meter_ID": m.item() if hasattr(m, "item") else m, "max_score": float(s)}
+        for m, s in meter_table.items()
+    ]
+
+    return {
+        "total_records": len(final_df),
+        "total_flagged": int(flagged.sum()),
+        "flag_rate_pct": float(flagged.mean() * 100) if len(final_df) else 0.0,
+        "n_high_risk_meters": int(final_df.loc[flagged, "Meter_ID"].nunique()),
+        "max_final_score": float(score.max()),
+        "avg_final_score": float(score.mean()),
+        "rule_contributions": {
+            r.split("_", 1)[0]: float(final_df[r].mean())
+            for r in RULE_NAMES if r in final_df.columns
+        },
+        "risk_over_time": risk_over_time,
+        "score_distribution": score_distribution,
+        "meter_risk_table": meter_risk_table,
+    }
+
+
 def process_pipeline(job_id: str, file_path: str, n_meters: int, contam: float, thresh: float):
     try:
         jobs[job_id].update({"status": "processing", "progress": 10, "message": "Cleaning data..."})
@@ -32,10 +80,7 @@ def process_pipeline(job_id: str, file_path: str, n_meters: int, contam: float, 
         jobs[job_id].update({"progress": 30, "message": "Applying 7 heuristic rules..."})
         features = compute_all_rules(df)
         
-        rule_columns = [
-            'R1_sudden_drop', 'R2_irregular_tou', 'R3_flat_readings', 
-            'R4_negative_reset', 'R5_vi_mismatch', 'R6_peer_comparison', 'R7_pattern_change'
-        ]
+        rule_columns = list(RULE_NAMES)
         
         jobs[job_id].update({"progress": 60, "message": "Running PCA & Isolation Forest..."})
         ml_output = run_ml_pipeline(features, rule_cols=rule_columns, contamination=contam)
@@ -55,45 +100,9 @@ def process_pipeline(job_id: str, file_path: str, n_meters: int, contam: float, 
         
         result_file = f"results_{job_id}.csv"
         final_df.to_csv(result_file)
-        
-        # --- PREPARE DATA FOR DASHBOARD ---
-        final_df.index = pd.to_datetime(final_df.index)
-        
-        # 1. Timeline (6-hour intervals) - Use lowercase '6h' for Pandas compatibility
-        risk_series = final_df.resample('6h')['Final_Risk_Score'].mean().fillna(0)
-        risk_over_time = [{"t": str(t), "score": float(s)} for t, s in risk_series.items()]
-        
-        # 2. Score Distribution (Used by renderDist in dashboard.html)
-        bins = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-        dist_counts = pd.cut(final_df['Final_Risk_Score'], bins=bins).value_counts().sort_index()
-        score_distribution = [{"bucket": f"{b.left}-{b.right}", "count": int(c)} for b, c in zip(dist_counts.index, dist_counts.values)]
-        
-        # 3. Meter Risk Index (Used by renderMeterTable in dashboard.html)
-        meter_table = final_df.groupby('Meter_ID')['Final_Risk_Score'].max().sort_values(ascending=False).head(10)
-        meter_risk_table = [{"Meter_ID": int(m), "max_score": float(s)} for m, s in meter_table.items()]
 
-        summary = {
-            "total_records": len(final_df),
-            "total_flagged": int((final_df['Final_Risk_Score'] >= thresh).sum()),
-            "flag_rate_pct": float((final_df['Final_Risk_Score'] >= thresh).mean() * 100),
-            "n_high_risk_meters": int(final_df[final_df['Final_Risk_Score'] >= thresh]['Meter_ID'].nunique()),
-            "max_final_score": float(final_df['Final_Risk_Score'].max()),
-            "avg_final_score": float(final_df['Final_Risk_Score'].mean()),
-            "rule_contributions": {
-                "R1": float(final_df['R1_sudden_drop'].mean()),
-                "R2": float(final_df['R2_irregular_tou'].mean()),
-                "R3": float(final_df['R3_flat_readings'].mean()),
-                "R4": float(final_df['R4_negative_reset'].mean()),
-                "R5": float(final_df['R5_vi_mismatch'].mean()),
-                "R6": float(final_df['R6_peer_comparison'].mean()),
-                "R7": float(final_df['R7_pattern_change'].mean()),
-            },
-            "risk_over_time": [{"t": str(t), "score": float(s)} for t, s in final_df.resample('6h')['Final_Risk_Score'].mean().fillna(0).items()],
-            # ADD THESE TWO LINES TO PREVENT DASHBOARD CRASH:
-            "score_distribution": [{"bucket": "0.0-0.2", "count": 10}, {"bucket": "0.8-1.0", "count": 5}], 
-            "meter_risk_table": [{"Meter_ID": "M1", "max_score": 0.9}]
-        }
-        
+        summary = build_summary(final_df, thresh)
+
         jobs[job_id].update({"status": "done", "progress": 100, "result_file": result_file, "summary": summary})
     except Exception as e:
         print(f"PIPELINE ERROR: {str(e)}") # This will print the exact crash reason in your terminal
@@ -116,7 +125,15 @@ async def get_status(job_id: str):
 
 @app.get("/api/summary/{job_id}")
 async def get_summary(job_id: str):
-    return jobs[job_id]["summary"]
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("status") != "done" or "summary" not in job:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job not complete (status={job.get('status')})",
+        )
+    return job["summary"]
 
 @app.get("/api/health")
 async def health(): return {"status": "ok"}

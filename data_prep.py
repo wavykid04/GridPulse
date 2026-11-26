@@ -88,6 +88,9 @@ def load_dataset(filepath: str, chunksize: int = 200_000) -> pd.DataFrame:
     return df
 
 
+from feature_engineering import NEGATIVE_FLAG_COL
+
+
 def _clean_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
     """Per-chunk cleaning: parse datetime, cast types, interpolate, clip."""
     # 1. Datetime index
@@ -108,7 +111,10 @@ def _clean_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
     # 3. Interpolate short NaN runs (up to 5 consecutive)
     chunk = chunk.interpolate(method="linear", limit=5, limit_direction="both")
 
-    # 4. Physical bounds clipping
+    # 4. Flag non-physical negative readings BEFORE clipping (used by rule R4)
+    chunk[NEGATIVE_FLAG_COL] = (chunk["Global_active_power"] < 0).astype("float32")
+
+    # 5. Physical bounds clipping
     chunk["Voltage"]               = chunk["Voltage"].clip(0, 300)
     chunk["Global_intensity"]      = chunk["Global_intensity"].clip(0, 100)
     chunk["Global_active_power"]   = chunk["Global_active_power"].clip(0, 20)
@@ -141,7 +147,7 @@ def resample_hourly(df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate per-minute readings to hourly means per Meter_ID."""
     print("\n  Resampling to hourly …")
     df_hourly = (
-        df.groupby("Meter_ID")
+        df.groupby("Meter_ID")[[c for c in df.columns if c != "Meter_ID"]]
           .resample("1h")
           .mean(numeric_only=True)
           .reset_index()
